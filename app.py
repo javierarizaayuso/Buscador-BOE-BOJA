@@ -8,7 +8,7 @@ import pdfplumber
 from urllib.parse import urljoin
 import unicodedata
 
-st.set_page_config(page_title="Radar Maestro BOE/BOJA - v20260427 by JAA", layout="wide")
+st.set_page_config(page_title="Radar Maestro BOE/BOJA - v20260504", layout="wide")
 
 # --- FUNCIONES DE UTILIDAD ---
 
@@ -87,26 +87,45 @@ def get_boe_data(date_obj):
         return results
     except: return []
 
-# --- MOTOR BOJA (PDF EXTRACTION - LÓGICA V16 RESTAURADA) ---
+# --- MOTOR BOJA (LOCALIZACIÓN Y EXTRACCIÓN PDF) ---
 
 def get_boletines_del_dia(fecha_obj):
-    fecha_str = fecha_obj.strftime("%Y%m%d")
-    hub_url = f"https://www.juntadeandalucia.es/eboja/{fecha_str}.html"
+    """Localización híbrida: Hub del día o Calendario Anual."""
+    f_str = fecha_obj.strftime("%Y%m%d")
+    anio = str(fecha_obj.year)
+    dia_num = str(fecha_obj.day)
+    meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+    mes_nombre = meses[fecha_obj.month - 1]
+    
     headers = {'User-Agent': 'Mozilla/5.0'}
+    boletines = set()
+
+    # 1. Intentar Hub del día
     try:
-        r = requests.get(hub_url, headers=headers, timeout=10)
-        if r.status_code != 200: return []
-        tree = html.fromstring(r.content)
-        links = tree.xpath('//a/@href')
-        boletines_bases = set()
-        anio = fecha_obj.strftime("%Y")
-        for l in links:
-            full = urljoin(hub_url, l)
-            match = re.search(rf'/eboja/{anio}/\d+/(?:c\d+/)?', full)
-            if match:
-                boletines_bases.add(match.group(0))
-        return sorted([urljoin("https://www.juntadeandalucia.es", b) for b in boletines_bases])
-    except: return []
+        r = requests.get(f"https://www.juntadeandalucia.es/eboja/{f_str}.html", headers=headers, timeout=5)
+        if r.status_code == 200:
+            links = html.fromstring(r.content).xpath('//a/@href')
+            for l in links:
+                full = urljoin(f"https://www.juntadeandalucia.es/eboja/{f_str}.html", l)
+                if re.search(rf'/eboja/{anio}/\d+/(?:c\d+/)?', full):
+                    boletines.add(re.search(rf'.*/eboja/{anio}/\d+/(?:c\d+/)?', full).group(0))
+    except: pass
+
+    # 2. Intentar Calendario Anual
+    if not boletines:
+        try:
+            r = requests.get(f"https://www.juntadeandalucia.es/eboja/{anio}", headers=headers, timeout=5)
+            if r.status_code == 200:
+                tree = html.fromstring(r.content)
+                xpath_cal = f'//table[contains(@summary, "{mes_nombre}")]//a[text()="{dia_num}"]/@href'
+                links_cal = tree.xpath(xpath_cal)
+                for l in links_cal:
+                    full = urljoin("https://www.juntadeandalucia.es", l)
+                    base = re.search(rf'.*/eboja/{anio}/\d+/', full)
+                    if base: boletines.add(base.group(0))
+        except: pass
+
+    return sorted(list(boletines))
 
 def extraer_anuncios_boja_pdf(pdf_content, boletin_fuente):
     anuncios = []
@@ -197,15 +216,14 @@ with st.form("radar_form"):
     st.markdown("### ⚙️ Reglas de Vigilancia")
     
     default_rules = [
-
         {"act": True, "bol": "BOE", "sec": "", "dep": "", "words": "ayuda OR subvencion OR incentivos"},
         {"act": True, "bol": "BOE", "sec": "", "dep": "jefatura competencia", "words": ""},
         {"act": True, "bol": "BOE", "sec": "", "dep": "ecologica", "words": "NOT riego AND NOT subterranea AND NOT vertido AND NOT extincion AND NOT sancionador"},
-        {"act": True, "bol": "BOE", "sec": "", "dep": "movilidad", "words": "ADIF OR DGT OR comunicaciones"},
+        {"act": True, "bol": "BOE", "sec": "", "dep": "movilidad", "words": "DGT OR comunicaciones OR ADIF AND NOT formalización"},
         {"act": False, "bol": "BOE", "sec": "", "dep": "", "words": ""},
         {"act": True, "bol": "BOJA", "sec": "", "dep": "", "words": "ayuda OR subvencion OR incentivos"},
         {"act": True, "bol": "BOJA", "sec": "generales", "dep": "presidencia", "words": ""},
-        {"act": True, "bol": "BOJA", "sec": "otras anuncios generales", "dep": "hacienda agua sostenibilidad energía", "words": ""},
+        {"act": True, "bol": "BOJA", "sec": "otras anuncios generales", "dep": "hacienda agua sostenibilidad energía fomento", "words": "NOT riego AND NOT subterranea AND NOT vertido AND NOT extincion AND NOT sancionador"},
         {"act": False, "bol": "BOJA", "sec": "", "dep": "", "words": ""}
     ]
 
@@ -237,60 +255,56 @@ if submit:
         # Descarga BOJA
         if any(r["boletin"] == "BOJA" for r in active_rules):
             urls_boja = get_boletines_del_dia(fecha)
-            total_boja_anuncios = []
+            total_boja_ads = []
             for b_url in urls_boja:
                 try:
-                    num_bol_display = b_url.strip('/').split('/')[-1]
-                    st.write(f"📥 Leyendo sumario BOJA: {num_bol_display}")
+                    num_bol_txt = b_url.strip('/').split('/')[-1]
+                    st.write(f"📥 Accediendo a BOJA: `{b_url}`")
                     r_bol = requests.get(b_url, timeout=10)
                     pdf_rel = html.fromstring(r_bol.content).xpath('//a[contains(@title, "sumario") and contains(@href, ".pdf")]/@href')
                     if pdf_rel:
-                        r_pdf = requests.get(urljoin(b_url, pdf_rel[0]), timeout=20)
-                        anuncios_bol = extraer_anuncios_boja_pdf(r_pdf.content, b_url)
-                        total_boja_anuncios.extend(anuncios_bol)
+                        pdf_url = urljoin(b_url, pdf_rel[0])
+ # LOG                  st.write(f"   📄 Leyendo PDF: `{pdf_url}`")
+                        r_pdf = requests.get(pdf_url, timeout=25)
+                        ads = extraer_anuncios_boja_pdf(r_pdf.content, b_url)
+                        total_boja_ads.extend(ads)
+                        st.write(f"   👍 {len(ads)} anuncios extraídos.")
                 except: continue
-            data_pool.extend(total_boja_anuncios)
-            st.write(f"✅ BOJA: {len(total_boja_anuncios)} anuncios leídos en {len(urls_boja)} boletines.")
+            data_pool.extend(total_boja_ads)
+            st.write(f"✅ BOJA: {len(total_boja_ads)} anuncios leídos en total.")
 
     if data_pool:
         encontrados = []
         for anuncio in data_pool:
             for rule in active_rules:
                 if rule["boletin"] not in anuncio["fuente"]: continue
+                # Filtros por capas
                 if not match_multiples_palabras_or(anuncio["seccion"], rule["seccion"]): continue
                 if not match_multiples_palabras_or(anuncio["organismo"], rule["depto"]): continue
                 if not evaluate_boolean(anuncio["titulo"], rule["palabras"]): continue
-                
                 item = anuncio.copy(); item["filtro_aplicado"] = rule["palabras"]
                 encontrados.append(item); break 
 
         if encontrados:
-            encontrados.sort(key=lambda x: (x["fuente"], normalizar(x["organismo"])))
-            st.success(f"🔥 Detectados {len(encontrados)} anuncios.")
-            
-            last_bol_group = None
-            last_org = None
-            
+            encontrados.sort(key=lambda x: (0 if "BOE" in x["fuente"] else 1, normalizar(x["organismo"])))
+            st.success(f"🔥 Detectados {len(encontrados)} anuncios de interés.")
+            last_bol_group, last_org = None, None
             for e in encontrados:
-                # Cabecera de Boletín (BOE / BOJA)
-                current_bol_group = "BOE" if "BOE" in e["fuente"] else "BOJA"
-                if current_bol_group != last_bol_group:
-                    st.header(f"🏛 {current_bol_group}")
-                    last_bol_group = current_bol_group
-                    last_org = None
-                
-                # Cabecera de Organismo
+                curr_bol_group = "BOE" if "BOE" in e["fuente"] else "BOJA"
+                if curr_bol_group != last_bol_group:
+                    st.header(f"🏛 {curr_bol_group}")
+                    last_bol_group, last_org = curr_bol_group, None
                 if e["organismo"] != last_org:
                     st.markdown(f"### <u>**{e['organismo']}**</u>", unsafe_allow_html=True)
                     last_org = e["organismo"]
-                
                 t_final = resaltar_palabras(e["titulo"], e["filtro_aplicado"])
                 with st.expander(t_final):
                     st.write(f"**📂 Sección:** {e['seccion']} | **📍 Fuente:** {e['fuente']}")
                     st.markdown(f"[📄 Ver PDF]({e['url']})" + (f" | [🔗 Ver HTML]({e['url_html']})" if e['url_html'] else ""))
         else:
-            st.warning("No hay coincidencias.")
+            st.warning("No hay coincidencias con los filtros aplicados.")
     else:
         st.error("No se han podido recuperar datos. Verifica la fecha seleccionada.")
 
 # Creado por Javier Ariza Ayuso con Google AI Studio
+
