@@ -224,7 +224,7 @@ with st.form("radar_form"):
         {"act": True, "bol": "BOJA", "sec": "", "dep": "agricultura hacienda empleo industria sostenibilidad", "words": "ayuda OR subvencion OR incentivos"},
         {"act": True, "bol": "BOJA", "sec": "generales", "dep": "presidencia", "words": ""},
         {"act": True, "bol": "BOJA", "sec": "otras anuncios generales", "dep": "hacienda agua sostenibilidad energía fomento", "words": "NOT riego AND NOT subterranea AND NOT vertido AND NOT extincion AND NOT sancionador AND NOT comparecencia"},
- #       {"act": True, "bol": "BOJA", "sec": "", "dep": "Ayuntamientos", "Córdoba OR Málaga": ""},
+        {"act": True, "bol": "BOJA", "sec": "", "dep": "Ayuntamientos", "Córdoba OR Málaga": ""},
         {"act": False, "bol": "BOJA", "sec": "", "dep": "", "words": ""}
     ]
 
