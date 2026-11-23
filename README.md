@@ -11,6 +11,7 @@ Insensible a mayúsculas y tildes.
 
 **Estructura del código**
 - `app.py`: interfaz Streamlit (reglas, descargas con caché y resultados).
+- `reglas.py` y `reglas.json`: reglas por defecto, validación y lectura/escritura del archivo.
 - `filtros.py`: normalización, coincidencia de palabras y expresiones booleanas (sin `eval`).
 - `boletines.py`: descarga del BOE (API XML) y del BOJA (PDF del sumario) y extracción de anuncios.
 - `tests/`: pruebas automáticas (`pip install -r requirements-dev.txt` y luego `pytest`).
@@ -22,3 +23,9 @@ Insensible a mayúsculas y tildes.
 - Las descargas se guardan en caché 15 minutos (boletines) o 1 hora (PDF del BOJA).
 
 **Si el BOJA deja de leerse bien:** los límites de maquetación del PDF están en las constantes `BOJA_*` al principio de `boletines.py`.
+
+**Reglas de vigilancia (`reglas.json`)**
+- Las reglas con las que arranca la app están en `reglas.json`. Para cambiarlas para todos los dispositivos, edita ese archivo en GitHub (también desde el móvil); Streamlit Cloud se redespliega solo.
+- Dentro de la app, el panel «Guardar, cargar o restaurar reglas» permite **descargar** las reglas que ves en pantalla, **cargar** un `.json` propio (por ejemplo desde otro dispositivo) y **restaurar** las de `reglas.json`. Lo cargado solo afecta a tu sesión actual; para que sea permanente, sube el archivo al repositorio.
+- Si `reglas.json` no existe se usan las reglas integradas en `reglas.py`; si está mal escrito, se usan también y la app avisa del error.
+- Formato: `{"version": 1, "reglas": [{"activa": true, "boletin": "BOE", "seccion": "", "organismo": "", "titulo": "ayuda OR subvencion"}]}` (hasta 10 reglas; las que falten se rellenan como inactivas).

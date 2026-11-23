@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "reglas": [
+    {
+      "activa": true,
+      "boletin": "BOE",
+      "seccion": "",
+      "organismo": "",
+      "titulo": "ayuda OR subvencion OR incentivos"
+    },
+    {
+      "activa": true,
+      "boletin": "BOE",
+      "seccion": "",
+      "organismo": "jefatura competencia",
+      "titulo": ""
+    },
+    {
+      "activa": true,
+      "boletin": "BOE",
+      "seccion": "",
+      "organismo": "ecologica",
+      "titulo": "NOT riego AND NOT subterranea AND NOT vertido AND NOT extincion AND NOT sancionador"
+    },
+    {
+      "activa": true,
+      "boletin": "BOE",
+      "seccion": "",
+      "organismo": "movilidad",
+      "titulo": "DGT OR comunicaciones OR ADIF AND NOT formalización"
+    },
+    {
+      "activa": false,
+      "boletin": "BOE",
+      "seccion": "",
+      "organismo": "",
+      "titulo": ""
+    },
+    {
+      "activa": true,
+      "boletin": "BOJA",
+      "seccion": "",
+      "organismo": "agricultura hacienda empleo industria sostenibilidad",
+      "titulo": "ayuda OR subvencion OR incentivos"
+    },
+    {
+      "activa": true,
+      "boletin": "BOJA",
+      "seccion": "generales",
+      "organismo": "presidencia",
+      "titulo": ""
+    },
+    {
+      "activa": true,
+      "boletin": "BOJA",
+      "seccion": "otras anuncios generales",
+      "organismo": "hacienda agua sostenibilidad energía fomento",
+      "titulo": "NOT riego AND NOT subterranea AND NOT vertido AND NOT extincion AND NOT sancionador AND NOT comparecencia"
+    },
+    {
+      "activa": true,
+      "boletin": "BOJA",
+      "seccion": "",
+      "organismo": "Ayuntamientos",
+      "titulo": "Córdoba OR Málaga"
+    },
+    {
+      "activa": false,
+      "boletin": "BOJA",
+      "seccion": "",
+      "organismo": "",
+      "titulo": ""
+    }
+  ]
+}

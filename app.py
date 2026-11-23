@@ -1,5 +1,7 @@
 import datetime
+import hashlib
 import logging
+from pathlib import Path
 
 import requests
 import streamlit as st
@@ -7,8 +9,10 @@ from lxml import etree
 
 import boletines
 import filtros
+import reglas
 
 VERSION = "v20261123"
+RUTA_REGLAS = Path(__file__).with_name("reglas.json")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,61 +43,106 @@ def anuncios_boletin_boja_cacheado(b_url):
     return boletines.obtener_anuncios_boletin_boja(b_url)
 
 
+# --- ESTADO DE LAS REGLAS ---
+# Cada fila del formulario guarda su valor en st.session_state (claves a0, bol0, s0, d0, w0...).
+# Al arrancar se rellenan desde reglas.json; el usuario puede cargar o descargar otro archivo.
+
+def aplicar_reglas_al_formulario(lista):
+    for i, r in enumerate(lista):
+        st.session_state[f"a{i}"] = r["activa"]
+        st.session_state[f"bol{i}"] = r["boletin"]
+        st.session_state[f"s{i}"] = r["seccion"]
+        st.session_state[f"d{i}"] = r["organismo"]
+        st.session_state[f"w{i}"] = r["titulo"]
+
+
+def reglas_del_formulario():
+    return [{
+        "activa": st.session_state[f"a{i}"],
+        "boletin": st.session_state[f"bol{i}"],
+        "seccion": st.session_state[f"s{i}"],
+        "organismo": st.session_state[f"d{i}"],
+        "titulo": st.session_state[f"w{i}"],
+    } for i in range(reglas.MAX_REGLAS)]
+
+
 # --- INTERFAZ ---
 
 st.title("📑 Radar Maestro BOE/BOJA by JAA")
 
-with st.form("radar_form"):
-    fecha = st.date_input("Fecha de consulta", datetime.date.today())
-    st.markdown("### ⚙️ Reglas de Vigilancia")
+if "reglas_iniciadas" not in st.session_state:
+    lista_inicial, aviso_inicial = reglas.cargar_reglas_archivo(RUTA_REGLAS)
+    aplicar_reglas_al_formulario(lista_inicial)
+    st.session_state["aviso_reglas"] = aviso_inicial
+    st.session_state["reglas_iniciadas"] = True
 
-    default_rules = [
-        {"act": True, "bol": "BOE", "sec": "", "dep": "", "words": "ayuda OR subvencion OR incentivos"},
-        {"act": True, "bol": "BOE", "sec": "", "dep": "jefatura competencia", "words": ""},
-        {"act": True, "bol": "BOE", "sec": "", "dep": "ecologica", "words": "NOT riego AND NOT subterranea AND NOT vertido AND NOT extincion AND NOT sancionador"},
-        {"act": True, "bol": "BOE", "sec": "", "dep": "movilidad", "words": "DGT OR comunicaciones OR ADIF AND NOT formalización"},
-        {"act": False, "bol": "BOE", "sec": "", "dep": "", "words": ""},
-        {"act": True, "bol": "BOJA", "sec": "", "dep": "agricultura hacienda empleo industria sostenibilidad", "words": "ayuda OR subvencion OR incentivos"},
-        {"act": True, "bol": "BOJA", "sec": "generales", "dep": "presidencia", "words": ""},
-        {"act": True, "bol": "BOJA", "sec": "otras anuncios generales", "dep": "hacienda agua sostenibilidad energía fomento", "words": "NOT riego AND NOT subterranea AND NOT vertido AND NOT extincion AND NOT sancionador AND NOT comparecencia"},
-        {"act": True, "bol": "BOJA", "sec": "", "dep": "Ayuntamientos", "words": "Córdoba OR Málaga"},
-        {"act": False, "bol": "BOJA", "sec": "", "dep": "", "words": ""},
-    ]
+if st.session_state.get("aviso_reglas"):
+    st.warning(f"⚠️ {st.session_state['aviso_reglas']}")
 
-    rules_input = []
-    c_h = st.columns([0.4, 0.7, 1.2, 1.3, 3.4])
-    c_h[0].write("**Act.**")
-    c_h[1].write("**Bol.**")
-    c_h[2].write("**Sección (OR)**")
-    c_h[3].write("**Organismo (OR)**")
-    c_h[4].write("**Filtro Título (Bool)**")
+fecha = st.date_input("Fecha de consulta", datetime.date.today())
 
-    for i, r in enumerate(default_rules):
-        c = st.columns([0.4, 0.7, 1.2, 1.3, 3.4])
-        with c[0]:
-            act = st.checkbox(f"Regla {i + 1} activa", value=r["act"], key=f"a{i}", label_visibility="collapsed")
-        with c[1]:
-            bol = st.selectbox(f"Regla {i + 1} boletín", ["BOE", "BOJA"], index=0 if r["bol"] == "BOE" else 1,
-                               key=f"bol{i}", label_visibility="collapsed")
-        with c[2]:
-            sec = st.text_input(f"Regla {i + 1} sección", value=r["sec"], key=f"s{i}", label_visibility="collapsed")
-        with c[3]:
-            dep = st.text_input(f"Regla {i + 1} organismo", value=r["dep"], key=f"d{i}", label_visibility="collapsed")
-        with c[4]:
-            words = st.text_input(f"Regla {i + 1} filtro de título", value=r["words"], key=f"w{i}", label_visibility="collapsed")
-        rules_input.append({"num": i + 1, "active": act, "boletin": bol, "seccion": sec, "depto": dep, "palabras": words})
+with st.expander("💾 Guardar, cargar o restaurar reglas"):
+    st.caption("Las reglas se guardan en un archivo `reglas.json` que puedes llevar a cualquier dispositivo. "
+               "Para que sean las de arranque en todos, sube ese archivo al repositorio sustituyendo el existente.")
+    st.download_button("⬇️ Descargar reglas actuales",
+                       data=reglas.reglas_a_json(reglas_del_formulario()),
+                       file_name="reglas.json", mime="application/json")
 
-    submit = st.form_submit_button("🚀 EJECUTAR VIGILANCIA")
+    subida = st.file_uploader("⬆️ Cargar reglas desde un archivo .json", type="json", key="subida_reglas")
+    if subida is not None:
+        contenido = subida.getvalue()
+        firma = hashlib.md5(contenido).hexdigest()
+        if st.session_state.get("firma_reglas") != firma:  # aplicar una sola vez cada archivo
+            try:
+                aplicar_reglas_al_formulario(reglas.reglas_desde_json(contenido.decode("utf-8-sig")))
+                st.session_state["firma_reglas"] = firma
+                st.success(f"✅ Reglas cargadas desde {subida.name}.")
+            except (reglas.ReglasError, UnicodeDecodeError) as e:
+                st.error(f"No se pudo cargar {subida.name}: {e}")
+    else:
+        st.session_state.pop("firma_reglas", None)
+
+    if st.button("↩️ Restaurar las reglas de reglas.json"):
+        lista_restaurada, aviso_restaurar = reglas.cargar_reglas_archivo(RUTA_REGLAS)
+        aplicar_reglas_al_formulario(lista_restaurada)
+        st.session_state["aviso_reglas"] = aviso_restaurar
+        st.rerun()
+
+st.markdown("### ⚙️ Reglas de Vigilancia")
+
+rules_input = []
+c_h = st.columns([0.4, 0.7, 1.2, 1.3, 3.4])
+c_h[0].write("**Act.**")
+c_h[1].write("**Bol.**")
+c_h[2].write("**Sección (OR)**")
+c_h[3].write("**Organismo (OR)**")
+c_h[4].write("**Filtro Título (Bool)**")
+
+for i in range(reglas.MAX_REGLAS):
+    c = st.columns([0.4, 0.7, 1.2, 1.3, 3.4])
+    with c[0]:
+        act = st.checkbox(f"Regla {i + 1} activa", key=f"a{i}", label_visibility="collapsed")
+    with c[1]:
+        bol = st.selectbox(f"Regla {i + 1} boletín", list(reglas.BOLETINES), key=f"bol{i}", label_visibility="collapsed")
+    with c[2]:
+        sec = st.text_input(f"Regla {i + 1} sección", key=f"s{i}", label_visibility="collapsed")
+    with c[3]:
+        dep = st.text_input(f"Regla {i + 1} organismo", key=f"d{i}", label_visibility="collapsed")
+    with c[4]:
+        words = st.text_input(f"Regla {i + 1} filtro de título", key=f"w{i}", label_visibility="collapsed")
+    rules_input.append({"num": i + 1, "activa": act, "boletin": bol, "seccion": sec, "organismo": dep, "titulo": words})
+
+submit = st.button("🚀 EJECUTAR VIGILANCIA", type="primary")
 
 if submit:
-    active_rules = [r for r in rules_input if r["active"]]
+    active_rules = [r for r in rules_input if r["activa"]]
 
     # Validar los filtros ANTES de descargar nada: una expresión mal escrita
     # se avisa en lugar de dejar la regla sin resultados en silencio.
     errores_reglas = []
     for r in active_rules:
         try:
-            filtros.compilar_expresion(r["palabras"])
+            filtros.compilar_expresion(r["titulo"])
         except filtros.ExpresionBooleanaError as e:
             errores_reglas.append(f"Regla {r['num']}: filtro de título no válido ({e}).")
     if errores_reglas:
@@ -160,12 +209,12 @@ if submit:
                 # Filtros por capas
                 if not filtros.match_multiples_palabras_or(anuncio["seccion"], rule["seccion"]):
                     continue
-                if not filtros.match_multiples_palabras_or(anuncio["organismo"], rule["depto"]):
+                if not filtros.match_multiples_palabras_or(anuncio["organismo"], rule["organismo"]):
                     continue
-                if not filtros.evaluate_boolean(anuncio["titulo"], rule["palabras"]):
+                if not filtros.evaluate_boolean(anuncio["titulo"], rule["titulo"]):
                     continue
                 item = anuncio.copy()
-                item["filtro_aplicado"] = rule["palabras"]
+                item["filtro_aplicado"] = rule["titulo"]
                 encontrados.append(item)
                 break
 
